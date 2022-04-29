@@ -1,46 +1,53 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
+	"flag"
 	"fmt"
-	"image/jpeg"
 	"os"
+	"path/filepath"
 
+	"github.com/akinobufujii/similar_images_grouping/readfileutil"
+	"github.com/akinobufujii/similar_images_grouping/readimageutil"
 	"github.com/corona10/goimagehash"
 )
 
 func main() {
-	// TODO: ディレクトリ内検査
-	file, err := os.Open("samples/Cerberus_Front_Pres_01.jpg")
+	cmd := struct {
+		Root         string
+		SampleWidth  int
+		SampleHeight int
+	}{}
+	flag.StringVar(&cmd.Root, "root", "", "search dir")
+	flag.IntVar(&cmd.SampleWidth, "samplew", 16, "pHash width")
+	flag.IntVar(&cmd.SampleHeight, "sampleh", 16, "pHash height")
+	flag.Parse()
+
+	rootPath := filepath.Clean(cmd.Root)
+
+	// NOTE: ディレクトリ内検査
+	filelist, err := readfileutil.GetFilelistFromDir(rootPath)
 	if err != nil {
 		fmt.Fprint(os.Stderr, err)
 		os.Exit(1)
 	}
 
-	// TODO: 拡張子による分岐
-	image, err := jpeg.Decode(file)
-	if err != nil {
-		fmt.Fprint(os.Stderr, err)
-		os.Exit(1)
-	}
+	for _, path := range filelist {
+		// TODO: 並列化
+		imageData, err := readimageutil.ReadImage(path)
+		if err != nil {
+			// NOTE: 読めなかったものはスルー
+			continue
+		}
 
-	// TODO: サンプル解像度を引数にする
-	// TODO: 関数化
-	imagehash, err := goimagehash.ExtPerceptionHash(image, 16, 16)
-	if err != nil {
-		fmt.Fprint(os.Stderr, err)
-		os.Exit(1)
-	}
+		// NOTE: pHashを計算
+		imagehash, err := goimagehash.ExtPerceptionHash(imageData, cmd.SampleWidth, cmd.SampleHeight)
+		if err != nil {
+			fmt.Fprint(os.Stderr, err)
+			os.Exit(1)
+		}
 
-	// TODO: 比較アルゴリズム
-	b := bytes.Buffer{}
-	writer := bufio.NewWriter(&b)
-	if err := imagehash.Dump(writer); err != nil {
-		fmt.Fprint(os.Stderr, err)
-		os.Exit(1)
+		// TODO: 比較アルゴリズム
+		fmt.Println(imagehash.GetHash())
+		fmt.Println(imagehash.ToString())
 	}
-
-	writer.Flush()
-	fmt.Println(b)
 }

@@ -30,3 +30,12 @@ func TestImageHash(t *testing.T) {
 	t.Logf("hash: %v\n", imagehash.ToString())
 	t.Logf("onesCount: %v\n", onesCount)
 }
+
+func TestWriteJson(t *testing.T) {
+	data := []ImageHashInfo{
+		{
+			Filepath: "hoge",
+		},
+	}
+	writeJson("test.json", data)
+}

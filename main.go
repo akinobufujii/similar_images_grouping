@@ -9,6 +9,7 @@ import (
 	"math/bits"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 
 	"github.com/akinobufujii/similar_images_grouping/readfileutil"
@@ -34,8 +35,8 @@ type KeyData struct {
 }
 
 // streamCalcImageHash 画像ハッシュ計算ストリーム
-func streamCalcImageHash(inputStream <-chan ImageDataInfo, samplew, sampleh, int, parallels int) <-chan ImageHashInfo {
-	wg := sync.WaitGroup{}
+func streamCalcImageHash(inputStream <-chan ImageDataInfo, samplew, sampleh, parallels int) <-chan ImageHashInfo {
+	wg := &sync.WaitGroup{}
 	wg.Add(parallels)
 
 	ch := make(chan ImageHashInfo, parallels)
@@ -110,46 +111,41 @@ func main() {
 		os.Exit(1)
 	}
 
-	//chInput := make(chan ImageDataInfo, 1)
-	//chOutput := streamCalcImageHash(chInput, cmd.SampleWidth, cmd.SampleHeight, runtime.NumCPU())
+	chInput := make(chan ImageDataInfo)
+	chOutput := streamCalcImageHash(chInput, cmd.SampleWidth, cmd.SampleHeight, runtime.NumCPU())
 
 	onesBitMap := map[int]*[]ImageHashInfo{}
+	go func() {
+		for info := range chOutput {
+			// NOTE: 後で比較するようにビットが立っている数によって先に割り振る
+			//       比較アルゴリズムはビットの排他的論理和の結果、0に近ければ似ていると判断する
+			//       そのため最初からビット数がしきい値よりも離れていたらそもそも比較する必要がない
+			onesCount := 0
+			for _, data := range info.ImageHash.GetHash() {
+				onesCount += bits.OnesCount64(data)
+			}
+
+			list, ok := onesBitMap[onesCount]
+			if !ok {
+				list = &[]ImageHashInfo{}
+				onesBitMap[onesCount] = list
+			}
+
+			*list = append(*list, ImageHashInfo{Filepath: info.Filepath, ImageHash: info.ImageHash})
+		}
+	}()
+
 	for _, path := range filelist {
-		// TODO: 並列化
 		imageData, err := readimageutil.ReadImage(path)
 		if err != nil {
 			// NOTE: 読めなかったものはスルー
 			continue
 		}
 
-		// NOTE: pHashを計算
-		imagehash, err := goimagehash.ExtPerceptionHash(imageData, cmd.SampleWidth, cmd.SampleHeight)
-		if err != nil {
-			fmt.Fprint(os.Stderr, err)
-			os.Exit(1)
-		}
-
-		// NOTE: 後で比較するようにビットが立っている数によって先に割り振る
-		//       比較アルゴリズムはビットの排他的論理和の結果、0に近ければ似ていると判断する
-		//       そのため最初からビット数がしきい値よりも離れていたらそもそも比較する必要がない
-		onesCount := 0
-		for _, data := range imagehash.GetHash() {
-			onesCount += bits.OnesCount64(data)
-		}
-
-		list, ok := onesBitMap[onesCount]
-		if !ok {
-			list = &[]ImageHashInfo{}
-			onesBitMap[onesCount] = list
-		}
-
-		*list = append(*list, ImageHashInfo{Filepath: path, ImageHash: imagehash})
+		// NOTE: 計算スレッドに片っ端から送信していく
+		chInput <- ImageDataInfo{Filepath: path, ImageData: imageData}
 	}
-	//close(chInput)
-
-	// for info := range chOutput {
-
-	// }
+	close(chInput)
 
 	writeJson("result.json", onesBitMap)
 

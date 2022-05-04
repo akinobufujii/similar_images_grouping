@@ -105,11 +105,13 @@ func writeJson(path string, targetData any) error {
 func main() {
 	cmd := struct {
 		Root         string
+		Parallels    int
 		SampleWidth  int
 		SampleHeight int
 		Threshold    int
 	}{}
 	flag.StringVar(&cmd.Root, "root", "", "search dir")
+	flag.IntVar(&cmd.Parallels, "j", runtime.NumCPU()+2, "parallel num")
 	flag.IntVar(&cmd.SampleWidth, "samplew", 16, "pHash width")
 	flag.IntVar(&cmd.SampleHeight, "sampleh", 16, "pHash height")
 	flag.IntVar(&cmd.Threshold, "threshold", 10, "pHash threshold")
@@ -126,7 +128,7 @@ func main() {
 
 	ch := streamCalcImageHash(
 		streamSendFilepath(filelist),
-		cmd.SampleWidth, cmd.SampleHeight, runtime.NumCPU())
+		cmd.SampleWidth, cmd.SampleHeight, cmd.Parallels)
 
 	onesBitMap := map[int]*[]ImageHashInfo{}
 	for info := range ch {

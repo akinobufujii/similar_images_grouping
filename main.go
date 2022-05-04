@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math"
 	"math/bits"
 	"os"
 	"path/filepath"
@@ -102,6 +103,81 @@ func writeJson(path string, targetData any) error {
 	return nil
 }
 
+// getKeyData キーデータを取得
+func getKeyData(onesBitMap map[int]*[]*ImageHashInfo) *KeyData {
+	// NOTE: 最初に見つかった要素をキーデータとする
+	for onesbit, list := range onesBitMap {
+		for i, info := range *list {
+			keydata := &KeyData{
+				Filepath:  info.Filepath,
+				ImageHash: info.ImageHash,
+				OnesBit:   onesbit,
+			}
+
+			// NOTE: この要素は比較する必要ないので消す
+			//       本当はgetで消さずに後でいい感じにまとめて消したい
+			(*list)[i] = nil
+			return keydata
+		}
+	}
+	return nil
+}
+
+// groupingSimilarImage 似ている画像をグルーピング
+func groupingSimilarImage(onesBitMap map[int]*[]*ImageHashInfo, keydata KeyData, threshold int) []string {
+	similarGroups := []string{}
+	for onesbit, list := range onesBitMap {
+		if int(math.Abs(float64(onesbit-keydata.OnesBit))) > threshold {
+			// NOTE: ここと似ることはないはず
+			continue
+		}
+
+		for i, info := range *list {
+			if info == nil {
+				continue
+			}
+
+			distance, err := keydata.ImageHash.Distance(info.ImageHash)
+			if err != nil {
+				// TODO: エラーハンドリング
+				fmt.Fprint(os.Stderr, err)
+				os.Exit(1)
+			}
+
+			if distance <= threshold {
+				// NOTE: ここに入れば似ていると判定
+				if len(similarGroups) == 0 {
+					similarGroups = append(similarGroups, keydata.Filepath)
+				}
+				similarGroups = append(similarGroups, info.Filepath)
+
+				// NOTE: すでに似ている判定されているので他と比較する必要はない
+				(*list)[i] = nil
+			}
+		}
+	}
+
+	return similarGroups
+}
+
+// compactionOnesBitMap onesBitMapの切り詰めを行う
+func compactionOnesBitMap(onesBitMap map[int]*[]*ImageHashInfo) {
+	for onesbit, list := range onesBitMap {
+		newList := []*ImageHashInfo{}
+		for _, info := range *list {
+			if info != nil {
+				newList = append(newList, info)
+			}
+		}
+
+		if len(newList) == 0 {
+			delete(onesBitMap, onesbit)
+		} else {
+			onesBitMap[onesbit] = &newList
+		}
+	}
+}
+
 func main() {
 	cmd := struct {
 		Root         string
@@ -130,7 +206,7 @@ func main() {
 		streamSendFilepath(filelist),
 		cmd.SampleWidth, cmd.SampleHeight, cmd.Parallels)
 
-	onesBitMap := map[int]*[]ImageHashInfo{}
+	onesBitMap := map[int]*[]*ImageHashInfo{}
 	for info := range ch {
 		// NOTE: 後で比較するようにビットが立っている数によって先に割り振る
 		//       比較アルゴリズムはビットの排他的論理和の結果、0に近ければ似ていると判断する
@@ -142,81 +218,30 @@ func main() {
 
 		list, ok := onesBitMap[onesCount]
 		if !ok {
-			list = &[]ImageHashInfo{}
+			list = &[]*ImageHashInfo{}
 			onesBitMap[onesCount] = list
 		}
 
-		*list = append(*list, ImageHashInfo{Filepath: info.Filepath, ImageHash: info.ImageHash})
+		*list = append(*list, &ImageHashInfo{Filepath: info.Filepath, ImageHash: info.ImageHash})
 	}
 
-	writeJson("result.json", onesBitMap)
+	similarGroupsList := [][]string{}
+	// NOTE: 似ている画像をグルーピングする
+	for len(onesBitMap) > 0 {
+		keydata := getKeyData(onesBitMap)
 
-	// TODO: 比較アルゴリズム実装
-	// similarGroupsList := [][]string{}
+		// NOTE: 全部を比較する（比較して似ていたら消す）
+		similarGroups := groupingSimilarImage(onesBitMap, *keydata, cmd.Threshold)
 
-	// // NOTE: 最初に見つかった対象を比較対象のキーデータにする
-	// keydata := KeyData{}
-	// for onesbit, list := range onesBitMap {
-	// 	for _, info := range *list {
-	// 		keydata.Filepath = info.Filepath
-	// 		keydata.ImageHash = info.ImageHash
-	// 		keydata.OnesBit = onesbit
-	// 		break
-	// 	}
-	// 	if len(keydata.Filepath) > 0 && keydata.ImageHash != nil {
-	// 		break
-	// 	}
-	// }
+		if len(similarGroups) > 0 {
+			// NOTE: 一つ以上要素が入っていれば何かしら似ていると判定
+			similarGroupsList = append(similarGroupsList, similarGroups)
+		}
 
-	// // NOTE: 全部を比較する（比較して似ていたら消す）
-	// similarGroups := []string{}
-	// removeOnesbitKey := -1
-	// removeIndex := -1
-	// for onesbit, list := range onesBitMap {
-	// 	if int(math.Abs(float64(onesbit-keydata.OnesBit))) > cmd.Threshold {
-	// 		// NOTE: ここと似ることはないはず
-	// 		continue
-	// 	}
+		// NOTE: onesBitMapを比較が必要なものだけにするためのコンパクションを行う
+		compactionOnesBitMap(onesBitMap)
+	}
 
-	// 	for i, info := range *list {
-	// 		if keydata.ImageHash == info.ImageHash && keydata.Filepath == info.Filepath {
-	// 			// NOTE: 同じ画像なので後で削除する
-	// 			removeOnesbitKey = onesbit
-	// 			removeIndex = i
-	// 			continue
-	// 		}
-
-	// 		distance, err := keydata.ImageHash.Distance(info.ImageHash)
-	// 		if err != nil {
-	// 			fmt.Fprint(os.Stderr, err)
-	// 			os.Exit(1)
-	// 		}
-
-	// 		if distance < cmd.Threshold {
-	// 			// NOTE: ここに入れば似ていると判定
-	// 			if len(similarGroups) == 0 {
-	// 				similarGroups = append(similarGroups, keydata.Filepath)
-	// 			}
-	// 			similarGroups = append(similarGroups, info.Filepath)
-	// 		}
-	// 	}
-	// }
-
-	// // NOTE: 比較終わったらキーデータをonesBitMapから消す
-	// if removeOnesbitKey >= 0 && removeIndex >= 0 {
-	// 	removeSliceNoSort := func(array []ImageHashInfo, i int) []ImageHashInfo {
-	// 		array[i] = array[len(array)-1]
-	// 		return array[:len(array)-1]
-	// 	}
-	// 	*onesBitMap[removeOnesbitKey] = removeSliceNoSort(*onesBitMap[removeOnesbitKey], removeIndex)
-	// }
-
-	// if len(similarGroups) > 0 {
-	// 	similarGroupsList = append(similarGroupsList, similarGroups)
-	// }
-
-	// // NOTE: onesBitMapの内容が何かあれば最初に戻る
-
-	// // TODO: csv書き出し
-	// fmt.Println(similarGroupsList)
+	// TODO: csv書き出し
+	writeJson("similar_groups.json", similarGroupsList)
 }

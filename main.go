@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"image"
 	"math/bits"
 	"os"
 	"path/filepath"
@@ -18,11 +17,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-type ImageDataInfo struct {
-	Filepath  string
-	ImageData image.Image
-}
-
 type ImageHashInfo struct {
 	Filepath  string
 	ImageHash *goimagehash.ExtImageHash
@@ -34,25 +28,44 @@ type KeyData struct {
 	OnesBit   int
 }
 
+// streamSendFilepath 読み込むファイルパスを送り続けるストリーム
+func streamSendFilepath(filelist []string) <-chan string {
+	ch := make(chan string, 1)
+	go func() {
+		for _, path := range filelist {
+			ch <- path
+		}
+		close(ch)
+	}()
+
+	return ch
+}
+
 // streamCalcImageHash 画像ハッシュ計算ストリーム
-func streamCalcImageHash(inputStream <-chan ImageDataInfo, samplew, sampleh, parallels int) <-chan ImageHashInfo {
+func streamCalcImageHash(inputStream <-chan string, samplew, sampleh, parallels int) <-chan ImageHashInfo {
 	wg := &sync.WaitGroup{}
 	wg.Add(parallels)
 
 	ch := make(chan ImageHashInfo, parallels)
 	for i := 0; i < parallels; i++ {
 		go func() {
-			for info := range inputStream {
-				imagehash, err := goimagehash.ExtPerceptionHash(info.ImageData, samplew, samplew)
+			for path := range inputStream {
+				imageData, err := readimageutil.ReadImage(path)
+				if err != nil {
+					// NOTE: 読めなかったものはスルー
+					continue
+				}
+
+				imagehash, err := goimagehash.ExtPerceptionHash(imageData, samplew, samplew)
 				if err != nil {
 					// TODO: エラーハンドリング
 					continue
 				}
 
-				result := ImageHashInfo{}
-				result.Filepath = info.Filepath
-				result.ImageHash = imagehash
-				ch <- result
+				ch <- ImageHashInfo{
+					Filepath:  path,
+					ImageHash: imagehash,
+				}
 			}
 			wg.Done()
 		}()
@@ -111,41 +124,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	chInput := make(chan ImageDataInfo)
-	chOutput := streamCalcImageHash(chInput, cmd.SampleWidth, cmd.SampleHeight, runtime.NumCPU())
+	ch := streamCalcImageHash(
+		streamSendFilepath(filelist),
+		cmd.SampleWidth, cmd.SampleHeight, runtime.NumCPU())
 
 	onesBitMap := map[int]*[]ImageHashInfo{}
-	go func() {
-		for info := range chOutput {
-			// NOTE: 後で比較するようにビットが立っている数によって先に割り振る
-			//       比較アルゴリズムはビットの排他的論理和の結果、0に近ければ似ていると判断する
-			//       そのため最初からビット数がしきい値よりも離れていたらそもそも比較する必要がない
-			onesCount := 0
-			for _, data := range info.ImageHash.GetHash() {
-				onesCount += bits.OnesCount64(data)
-			}
-
-			list, ok := onesBitMap[onesCount]
-			if !ok {
-				list = &[]ImageHashInfo{}
-				onesBitMap[onesCount] = list
-			}
-
-			*list = append(*list, ImageHashInfo{Filepath: info.Filepath, ImageHash: info.ImageHash})
-		}
-	}()
-
-	for _, path := range filelist {
-		imageData, err := readimageutil.ReadImage(path)
-		if err != nil {
-			// NOTE: 読めなかったものはスルー
-			continue
+	for info := range ch {
+		// NOTE: 後で比較するようにビットが立っている数によって先に割り振る
+		//       比較アルゴリズムはビットの排他的論理和の結果、0に近ければ似ていると判断する
+		//       そのため最初からビット数がしきい値よりも離れていたらそもそも比較する必要がない
+		onesCount := 0
+		for _, data := range info.ImageHash.GetHash() {
+			onesCount += bits.OnesCount64(data)
 		}
 
-		// NOTE: 計算スレッドに片っ端から送信していく
-		chInput <- ImageDataInfo{Filepath: path, ImageData: imageData}
+		list, ok := onesBitMap[onesCount]
+		if !ok {
+			list = &[]ImageHashInfo{}
+			onesBitMap[onesCount] = list
+		}
+
+		*list = append(*list, ImageHashInfo{Filepath: info.Filepath, ImageHash: info.ImageHash})
 	}
-	close(chInput)
 
 	writeJson("result.json", onesBitMap)
 

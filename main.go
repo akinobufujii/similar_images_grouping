@@ -28,6 +28,8 @@ type KeyData struct {
 	OnesBit   int
 }
 
+type OnesBitKeyImageHashMap map[int]*[]*ImageHashInfo
+
 // streamSendWalkFilepath 指定ディレクトリ以下のwalk結果を返していくストリーム
 func streamSendWalkFilepath(root string) <-chan string {
 	ch := make(chan string, 1)
@@ -115,7 +117,7 @@ func writeJson(path string, targetData any) error {
 }
 
 // getKeyData キーデータを取得
-func getKeyData(onesBitMap map[int]*[]*ImageHashInfo) *KeyData {
+func getKeyData(onesBitMap OnesBitKeyImageHashMap) *KeyData {
 	// NOTE: 最初に見つかった要素をキーデータとする
 	for onesbit, list := range onesBitMap {
 		for i, info := range *list {
@@ -135,7 +137,7 @@ func getKeyData(onesBitMap map[int]*[]*ImageHashInfo) *KeyData {
 }
 
 // groupingSimilarImage 似ている画像をグルーピング
-func groupingSimilarImage(onesBitMap map[int]*[]*ImageHashInfo, keydata KeyData, threshold int) []string {
+func groupingSimilarImage(onesBitMap OnesBitKeyImageHashMap, keydata KeyData, threshold int) []string {
 	similarGroups := []string{}
 	for onesbit, list := range onesBitMap {
 		if int(math.Abs(float64(onesbit-keydata.OnesBit))) > threshold {
@@ -172,7 +174,7 @@ func groupingSimilarImage(onesBitMap map[int]*[]*ImageHashInfo, keydata KeyData,
 }
 
 // compactionOnesBitMap onesBitMapの切り詰めを行う
-func compactionOnesBitMap(onesBitMap map[int]*[]*ImageHashInfo) {
+func compactionOnesBitMap(onesBitMap OnesBitKeyImageHashMap) {
 	for onesbit, list := range onesBitMap {
 		newList := []*ImageHashInfo{}
 		for _, info := range *list {
@@ -215,11 +217,11 @@ func main() {
 		streamSendWalkFilepath(rootPath),
 		cmd.SampleWidth, cmd.SampleHeight, parallels)
 
-	onesBitMap := map[int]*[]*ImageHashInfo{}
+	onesBitMap := OnesBitKeyImageHashMap{}
 	for info := range ch {
 		// NOTE: 後で比較するようにビットが立っている数によって先に割り振る
 		//       比較アルゴリズムはビットの排他的論理和の結果、0に近ければ似ていると判断する
-		//       そのため最初からビット数がしきい値よりも離れていたらそもそも比較する必要がない
+		//       そのため最初から立っているビット数がしきい値よりも離れていたらそもそも比較する必要がない
 		onesCount := 0
 		for _, data := range info.ImageHash.GetHash() {
 			onesCount += bits.OnesCount64(data)

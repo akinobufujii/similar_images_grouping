@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/akinobufujii/similar_images_grouping/readfileutil"
 	"github.com/akinobufujii/similar_images_grouping/readimageutil"
 	"github.com/corona10/goimagehash"
 	"github.com/pkg/errors"
@@ -29,13 +28,25 @@ type KeyData struct {
 	OnesBit   int
 }
 
-// streamSendFilepath 読み込むファイルパスを送り続けるストリーム
-func streamSendFilepath(filelist []string) <-chan string {
+// streamSendWalkFilepath 指定ディレクトリ以下のwalk結果を返していくストリーム
+func streamSendWalkFilepath(root string) <-chan string {
 	ch := make(chan string, 1)
 	go func() {
-		for _, path := range filelist {
+		walkFunc := func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return errors.Wrap(err, "failed filepath.WalkDir func")
+			}
+
+			if d.IsDir() {
+				return nil
+			}
+
 			ch <- path
+			return nil
 		}
+
+		// TODO: エラーハンドリング
+		filepath.WalkDir(root, walkFunc)
 		close(ch)
 	}()
 
@@ -187,24 +198,22 @@ func main() {
 		Threshold    int
 	}{}
 	flag.StringVar(&cmd.Root, "root", "", "search dir")
-	flag.IntVar(&cmd.Parallels, "j", runtime.NumCPU()+2, "parallel num")
+	flag.IntVar(&cmd.Parallels, "j", runtime.NumCPU(), "parallel num")
 	flag.IntVar(&cmd.SampleWidth, "samplew", 16, "pHash width")
 	flag.IntVar(&cmd.SampleHeight, "sampleh", 16, "pHash height")
 	flag.IntVar(&cmd.Threshold, "threshold", 10, "pHash threshold")
 	flag.Parse()
 
 	rootPath := filepath.Clean(cmd.Root)
-
-	// NOTE: ディレクトリ内検査
-	filelist, err := readfileutil.GetFilelistFromDir(rootPath)
-	if err != nil {
-		fmt.Fprint(os.Stderr, err)
-		os.Exit(1)
+	parallels := cmd.Parallels
+	if parallels < 1 {
+		parallels = 1
 	}
 
+	// NOTE: 並行して見つけた画像のハッシュを計算する
 	ch := streamCalcImageHash(
-		streamSendFilepath(filelist),
-		cmd.SampleWidth, cmd.SampleHeight, cmd.Parallels)
+		streamSendWalkFilepath(rootPath),
+		cmd.SampleWidth, cmd.SampleHeight, parallels)
 
 	onesBitMap := map[int]*[]*ImageHashInfo{}
 	for info := range ch {

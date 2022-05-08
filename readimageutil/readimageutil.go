@@ -6,13 +6,14 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/pkg/errors"
 )
 
 // ReadImage 画像データ読み込み（内部で拡張子による分岐を行う）
 func ReadImage(path string) (image.Image, error) {
-	ext := filepath.Ext(path)
+	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".jpg", ".jpeg":
 		imageData, err := ReadJpeg(path)

@@ -1,17 +1,22 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"image"
 	"math"
 	"math/bits"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
+	"unicode/utf8"
 
+	"github.com/akinobufujii/similar_images_grouping/charcodeutil"
 	"github.com/akinobufujii/similar_images_grouping/readimageutil"
 	"github.com/corona10/goimagehash"
 	"github.com/pkg/errors"
@@ -61,24 +66,71 @@ func streamCalcImageHash(inputStream <-chan string, samplew, sampleh, parallels 
 	wg.Add(parallels)
 
 	ch := make(chan ImageHashInfo, parallels)
+
+	// TODO: リファクタリング
+	sendImagehashResult := func(imageData image.Image, path string) {
+		imagehash, err := goimagehash.ExtPerceptionHash(imageData, samplew, samplew)
+		if err != nil {
+			// TODO: エラーハンドリング
+			return
+		}
+
+		ch <- ImageHashInfo{
+			Filepath:  path,
+			ImageHash: imagehash,
+		}
+	}
+
+	// TODO: リファクタリング
+	readImageFromZip := func(path string) {
+		zipReader, err := zip.OpenReader(path)
+		if err != nil {
+			// NOTE: エラーハンドリング
+			return
+		}
+		defer zipReader.Close()
+
+		for _, file := range zipReader.File {
+			dispname := file.Name
+			reader, err := file.Open()
+			if err != nil {
+				// NOTE: エラーハンドリング
+				continue
+			}
+
+			imageData, _, err := readimageutil.DecodeImage(reader)
+			if err != nil {
+				// NOTE: エラーハンドリング
+				continue
+			}
+
+			if !utf8.Valid([]byte(dispname)) {
+				// NOTE: zipの中身はどうやらshiftjis
+				newName, err := charcodeutil.SjisToUTF8(file.Name)
+				if err == nil {
+					dispname = newName
+				}
+			}
+
+			sendImagehashResult(imageData, filepath.Join(path, dispname))
+		}
+	}
+
 	for i := 0; i < parallels; i++ {
 		go func() {
 			for path := range inputStream {
-				imageData, err := readimageutil.ReadImage(path)
-				if err != nil {
-					// NOTE: 読めなかったものはスルー
-					continue
-				}
+				// NOTE: 拡張子で処理を分岐
+				switch strings.ToLower(filepath.Ext(path)) {
+				case ".zip": // NOTE: zipファイル
+					readImageFromZip(path)
+				default: // NOTE: その他（画像ファイルとして判断）
+					imageData, _, err := readimageutil.ReadImage(path)
+					if err != nil {
+						// NOTE: 読めなかったものはスルー
+						continue
+					}
 
-				imagehash, err := goimagehash.ExtPerceptionHash(imageData, samplew, samplew)
-				if err != nil {
-					// TODO: エラーハンドリング
-					continue
-				}
-
-				ch <- ImageHashInfo{
-					Filepath:  path,
-					ImageHash: imagehash,
+					sendImagehashResult(imageData, path)
 				}
 			}
 			wg.Done()

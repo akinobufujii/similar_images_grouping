@@ -10,7 +10,7 @@ import (
 
 func TestImageHash(t *testing.T) {
 	path := "samples/Cerberus_Front_Pres_01.jpg"
-	imageData, err := readimageutil.ReadImage(path)
+	imageData, imageType, err := readimageutil.ReadImage(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,6 +27,7 @@ func TestImageHash(t *testing.T) {
 	}
 
 	t.Logf("filename: %v\n", path)
+	t.Logf("filetype: %v\n", imageType)
 	t.Logf("hash: %v\n", imagehash.ToString())
 	t.Logf("onesCount: %v\n", onesCount)
 }

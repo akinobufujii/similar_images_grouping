@@ -17,6 +17,7 @@ func ReadImage(path string) (image.Image, string, error) {
 		var empty image.Image
 		return empty, "", errors.Wrap(err, "failed os.Open")
 	}
+	defer file.Close()
 
 	imageData, imageType, err := DecodeImage(file)
 	if err != nil {

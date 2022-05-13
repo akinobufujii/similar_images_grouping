@@ -149,7 +149,7 @@ func streamSendWalkFilepath(root string) <-chan string {
 
 // streamCalcImageHash 画像ハッシュ計算ストリーム
 func streamCalcImageHash(inputStream <-chan string, samplew, sampleh, parallels int) <-chan ImageHashInfo {
-	wg := &sync.WaitGroup{}
+	wg := sync.WaitGroup{}
 	wg.Add(parallels)
 
 	ch := make(chan ImageHashInfo, parallels)
@@ -177,23 +177,31 @@ func streamCalcImageHash(inputStream <-chan string, samplew, sampleh, parallels 
 		}
 		defer zipReader.Close()
 
-		for _, file := range zipReader.File {
-			dispname := file.Name
+		getImageData := func(file *zip.File) (image.Image, error) {
 			reader, err := file.Open()
 			if err != nil {
-				// NOTE: エラーハンドリング
-				continue
+				return nil, err
 			}
+			defer reader.Close()
 
 			imageData, _, err := readimageutil.DecodeImage(reader)
 			if err != nil {
+				return nil, err
+			}
+			return imageData, nil
+		}
+		for _, file := range zipReader.File {
+
+			imageData, err := getImageData(file)
+			if err != nil {
 				// NOTE: エラーハンドリング
 				continue
 			}
 
+			dispname := file.Name
 			if !utf8.Valid([]byte(dispname)) {
 				// NOTE: zipの中身はどうやらshiftjis
-				newName, err := charcodeutil.SjisToUTF8(file.Name)
+				newName, err := charcodeutil.SjisToUTF8(dispname)
 				if err == nil {
 					dispname = newName
 				}

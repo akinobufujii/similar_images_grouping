@@ -18,6 +18,7 @@ import (
 
 	"github.com/akinobufujii/similar_images_grouping/charcodeutil"
 	"github.com/akinobufujii/similar_images_grouping/readimageutil"
+	"github.com/bradhe/stopwatch"
 	"github.com/corona10/goimagehash"
 	"github.com/pkg/errors"
 )
@@ -284,6 +285,8 @@ func main() {
 		parallels = 1
 	}
 
+	watch := stopwatch.Start()
+
 	// NOTE: 並行して見つけた画像のハッシュを計算する
 	ch := streamCalcImageHash(
 		streamSendWalkFilepath(rootPath),
@@ -294,6 +297,11 @@ func main() {
 	for info := range ch {
 		onesBitMap.Append(info)
 	}
+
+	watch.Stop()
+	fmt.Printf("ReadFiles: %v\n", watch.String())
+
+	watch = stopwatch.Start()
 
 	// NOTE: 似ている画像をグルーピングする
 	similarGroupsList := [][]string{}
@@ -319,6 +327,9 @@ func main() {
 		// NOTE: onesBitMapを比較が必要なものだけに要素を切り詰める
 		onesBitMap.CompactionOnesBitMap()
 	}
+
+	watch.Stop()
+	fmt.Printf("GroupingFiles: %v\n", watch.String())
 
 	// TODO: csv書き出し
 	writeJson("similar_groups.json", similarGroupsList)

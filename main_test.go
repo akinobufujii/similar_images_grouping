@@ -37,24 +37,27 @@ func TestImageHash(t *testing.T) {
 
 // TestEncodeDecodeImageHashInfo エンコード・デコードテスト
 func TestEncodeDecodeImageHashInfo(t *testing.T) {
-	path := "samples/Cerberus_Front_Pres_01.jpg"
-	imageData, _, err := readimageutil.ReadImage(path)
-	if err != nil {
-		t.Fatal(err)
+	readPathList := []string{
+		"samples/Cerberus_Front_Pres_01.jpg",
+		"samples/sample1.jpg",
 	}
 
-	// NOTE: pHashを計算
-	imagehash, err := goimagehash.ExtPerceptionHash(imageData, 16, 16)
-	if err != nil {
-		t.Fatal(err)
+	encodeImageHashInfoList := ImageHashInfoList{}
+	for _, path := range readPathList {
+		imageData, _, err := readimageutil.ReadImage(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// NOTE: pHashを計算
+		imagehash, err := goimagehash.ExtPerceptionHash(imageData, 16, 16)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encodeImageHashInfoList = append(encodeImageHashInfoList, ImageHashInfo{Filepath: path, ImageHash: imagehash})
 	}
-	// NOTE: エンコード・デコード
-	imageHashInfoA := ImageHashInfo{Filepath: path, ImageHash: imagehash}
-	imageHashInfoB := ImageHashInfo{}
 
-	t.Logf("imageHashInfoA.filename: %v\n", imageHashInfoA.Filepath)
-	t.Logf("imageHashInfoA.hash: %v\n", imageHashInfoA.ImageHash.ToString())
-
+	// NOTE: 複数ファイルエンコード・デコードテスト
 	saveFile := "imagehash_temp.json"
 	file, err := os.Create(saveFile)
 	if err != nil {
@@ -63,7 +66,7 @@ func TestEncodeDecodeImageHashInfo(t *testing.T) {
 
 	jsonEncoder := json.NewEncoder(file)
 	jsonEncoder.SetIndent("", "  ")
-	if err := imageHashInfoA.EncodeToJson(jsonEncoder); err != nil {
+	if err := jsonEncoder.Encode(encodeImageHashInfoList); err != nil {
 		t.Fatal(err)
 	}
 
@@ -74,24 +77,24 @@ func TestEncodeDecodeImageHashInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	jsonDecoder := json.NewDecoder(file)
-	if err := imageHashInfoB.DecodeFromJson(jsonDecoder); err != nil {
+	decodeImageHashInfoList := ImageHashInfoList{}
+	if err := json.NewDecoder(file).Decode(&decodeImageHashInfoList); err != nil {
 		t.Fatal(err)
 	}
 
-	t.Logf("imageHashInfoB.filename: %v\n", imageHashInfoB.Filepath)
-	t.Logf("imageHashInfoB.hash: %v\n", imageHashInfoB.ImageHash.ToString())
-
-	if !reflect.DeepEqual(imageHashInfoA, imageHashInfoB) {
+	// NOTE: 内容一致確認
+	if !reflect.DeepEqual(encodeImageHashInfoList, decodeImageHashInfoList) {
 		t.Fatal("failed encode/decode imageHashInfo")
 	}
-}
 
-func TestWriteJson(t *testing.T) {
-	data := []ImageHashInfo{
-		{
-			Filepath: "hoge",
-		},
+	for i := range encodeImageHashInfoList {
+		encodeImageInfo := encodeImageHashInfoList[i]
+		decodeImageInfo := decodeImageHashInfoList[i]
+
+		t.Logf("%02v encodeImageInfo.filename: %v\n", i, encodeImageInfo.Filepath)
+		t.Logf("%02v decodeImageInfo.filename: %v\n", i, decodeImageInfo.Filepath)
+
+		t.Logf("%02v encodeImageInfo.hash: %v\n", i, encodeImageInfo.ImageHash.ToString())
+		t.Logf("%02v decodeImageInfo.hash: %v\n", i, decodeImageInfo.ImageHash.ToString())
 	}
-	writeJson("test.json", data)
 }

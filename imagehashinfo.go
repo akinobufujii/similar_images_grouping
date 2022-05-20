@@ -15,16 +15,18 @@ type ImageHashInfo struct {
 	ImageHash *goimagehash.ExtImageHash
 }
 
-// EncodeToJson Jsonデータにエンコード
-func (p *ImageHashInfo) EncodeToJson(enc *json.Encoder) error {
+type ImageHashInfoList []ImageHashInfo
+
+// MarshalJSON Jsonデータにエンコード
+func (p *ImageHashInfo) MarshalJSON() ([]byte, error) {
 	b := bytes.Buffer{}
 	writer := bufio.NewWriter(&b)
 	if err := p.ImageHash.Dump(writer); err != nil {
-		return errors.Wrap(err, "failed ImageHash.Dump")
+		return []byte{}, errors.Wrap(err, "failed ImageHash.Dump")
 	}
 
 	if err := writer.Flush(); err != nil {
-		return errors.Wrap(err, "failed Flush")
+		return []byte{}, errors.Wrap(err, "failed Flush")
 	}
 
 	encodeData := struct {
@@ -35,23 +37,24 @@ func (p *ImageHashInfo) EncodeToJson(enc *json.Encoder) error {
 		ImageHashDump: base64.StdEncoding.EncodeToString(b.Bytes()),
 	}
 
-	if err := enc.Encode(encodeData); err != nil {
-		return errors.Wrap(err, "failed Encode")
+	data, err := json.Marshal(encodeData)
+	if err != nil {
+		return []byte{}, errors.Wrap(err, "failed Marshal")
 	}
 
-	return nil
+	return data, nil
 }
 
-// DecodeFromJson Jsonデータにデコード
-func (p *ImageHashInfo) DecodeFromJson(dec *json.Decoder) error {
+// UnmarshalJSON Jsonデータからデコード
+func (p *ImageHashInfo) UnmarshalJSON(b []byte) error {
 	decodeData := struct {
 		Filepath      string
 		ImageHashDump string
 	}{}
 
-	err := dec.Decode(&decodeData)
+	err := json.Unmarshal(b, &decodeData)
 	if err != nil {
-		return errors.Wrap(err, "failed Decode")
+		return errors.Wrap(err, "failed Unmarshal")
 	}
 
 	data, err := base64.StdEncoding.DecodeString(decodeData.ImageHashDump)

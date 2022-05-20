@@ -63,7 +63,7 @@ func TestEncodeDecodeImageHashInfo(t *testing.T) {
 
 	jsonEncoder := json.NewEncoder(file)
 	jsonEncoder.SetIndent("", "  ")
-	if err := imageHashInfoA.EncodeJson(jsonEncoder); err != nil {
+	if err := imageHashInfoA.EncodeToJson(jsonEncoder); err != nil {
 		t.Fatal(err)
 	}
 
@@ -75,7 +75,7 @@ func TestEncodeDecodeImageHashInfo(t *testing.T) {
 	}
 
 	jsonDecoder := json.NewDecoder(file)
-	if err := imageHashInfoB.DecodeJson(jsonDecoder); err != nil {
+	if err := imageHashInfoB.DecodeFromJson(jsonDecoder); err != nil {
 		t.Fatal(err)
 	}
 

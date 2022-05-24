@@ -98,3 +98,73 @@ func TestEncodeDecodeImageHashInfo(t *testing.T) {
 		t.Logf("%02v decodeImageInfo.hash: %v\n", i, decodeImageInfo.ImageHash.ToString())
 	}
 }
+
+func TestJsonFormat(t *testing.T) {
+	data, err := os.ReadFile("midfile.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var encodeList any
+	if err := json.Unmarshal(data, &encodeList); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := writeJson("midfile-format.json", encodeList); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestOnebitCount ビットが立っている数の比較テスト
+func TestOnebitCount(t *testing.T) {
+	data, err := os.ReadFile("midfile.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	encodeList := ImageHashInfoList{}
+	if err := json.Unmarshal(data, &encodeList); err != nil {
+		t.Fatal(err)
+	}
+
+	onesBitCountSumMap := map[uint32]int32{}
+	onesBitCountShiftMap := map[uint32]int32{}
+	onesBitCountShiftSumMap := map[uint32]int32{}
+	t.Logf("listnum: %v\n", len(encodeList))
+	for _, encodeData := range encodeList {
+		onesbitcount := uint32(0)
+		onesbitshift := uint32(0)
+		onesbitshiftsum := uint32(0)
+		thresholdShift := len(encodeData.ImageHash.GetHash()) / 2
+		for i, bit64 := range encodeData.ImageHash.GetHash() {
+			ones := uint32(bits.OnesCount64(bit64))
+
+			// 単純にビット立ってる数足すだけ
+			onesbitcount += ones
+
+			// 64bitごとにビット立ってる数を計算してシフト
+			onesbitshift <<= 8
+			onesbitshift |= ones
+
+			// hashのビット数を半分に割ってシフト
+			// 例：256bitなら128bitのビットを数えてシフト
+			if i == thresholdShift {
+				onesbitshiftsum <<= 16
+			}
+			onesbitshiftsum += ones
+		}
+		onesBitCountSumMap[onesbitcount]++
+		onesBitCountShiftMap[onesbitshift]++
+		onesBitCountShiftSumMap[onesbitshiftsum]++
+	}
+
+	if err := writeJson("onesbitsum.json", onesBitCountSumMap); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJson("onesbitshift.json", onesBitCountShiftMap); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJson("onesbitshiftsum.json", onesBitCountShiftSumMap); err != nil {
+		t.Fatal(err)
+	}
+}

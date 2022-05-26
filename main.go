@@ -162,20 +162,57 @@ func writeJson(path string, targetData any) error {
 	return nil
 }
 
+// streamSendImageHashFromFile 中間ファイルからImageHashInfoを送り続けるストリーム
+func streamSendImageHashFromFile(filename string) <-chan ImageHashInfo {
+	ch := make(chan ImageHashInfo, 1)
+
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		// TODO: error handring
+		close(ch)
+		return ch
+	}
+
+	// TODO: streaming read
+	imageHashInfoList := ImageHashInfoList{}
+	if err := json.Unmarshal(data, &imageHashInfoList); err != nil {
+		// TODO: error handring
+		close(ch)
+		return ch
+	}
+
+	go func() {
+		for _, info := range imageHashInfoList {
+			ch <- info
+		}
+		close(ch)
+	}()
+
+	return ch
+}
+
 func main() {
 	cmd := struct {
-		Root         string
-		Parallels    int
-		SampleWidth  int
-		SampleHeight int
-		Threshold    int
+		Root                      string
+		WriteIntermediateFilename string
+		ReadIntermediateFilename  string
+		Parallels                 int
+		SampleWidth               int
+		SampleHeight              int
+		Threshold                 int
 	}{}
 	flag.StringVar(&cmd.Root, "root", "", "search dir")
+	flag.StringVar(&cmd.WriteIntermediateFilename, "write-midfile", "midfile.json", "write intermediate filename(json)")
+	flag.StringVar(&cmd.ReadIntermediateFilename, "read-midfile", "", "read intermediate filename(json)")
+
 	flag.IntVar(&cmd.Parallels, "j", runtime.NumCPU(), "parallel num")
 	flag.IntVar(&cmd.SampleWidth, "samplew", 16, "pHash width")
 	flag.IntVar(&cmd.SampleHeight, "sampleh", 16, "pHash height")
 	flag.IntVar(&cmd.Threshold, "threshold", 10, "pHash threshold")
 	flag.Parse()
+
+	isWriteMidFile := len(cmd.WriteIntermediateFilename) != 0
+	isReadMidFile := len(cmd.ReadIntermediateFilename) != 0
 
 	rootPath := filepath.Clean(cmd.Root)
 	parallels := cmd.Parallels
@@ -185,15 +222,33 @@ func main() {
 
 	watch := stopwatch.Start()
 
-	// NOTE: 並行して見つけた画像のハッシュを計算する
-	ch := streamCalcImageHash(
-		streamSendWalkFilepath(rootPath),
-		cmd.SampleWidth, cmd.SampleHeight, parallels)
+	var ch <-chan ImageHashInfo
+	if isReadMidFile {
+		// NOTE: 中間ファイルから読み込んでその情報を受け取る
+		ch = streamSendImageHashFromFile(cmd.ReadIntermediateFilename)
+	} else {
+		// NOTE: 並行して見つけた画像のハッシュを計算する
+		ch = streamCalcImageHash(
+			streamSendWalkFilepath(rootPath),
+			cmd.SampleWidth, cmd.SampleHeight, parallels)
+	}
 
 	// NOTE: 要素をすべてコンテナに集約して比較する
 	onesBitMap := OnesBitKeyImageHashMap{}
+	encodeList := ImageHashInfoList{}
 	for info := range ch {
 		onesBitMap.Append(info)
+		if isWriteMidFile {
+			encodeList = append(encodeList, info)
+		}
+	}
+
+	if isWriteMidFile && len(encodeList) > 0 {
+		// NOTE: 復帰できるようにJsonファイルを保存する
+		if err := writeJson(cmd.WriteIntermediateFilename, encodeList); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	}
 
 	watch.Stop()

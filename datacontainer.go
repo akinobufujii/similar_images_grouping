@@ -1,13 +1,34 @@
 package main
 
 import (
-	"math"
 	"math/bits"
 
 	"github.com/pkg/errors"
 )
 
 type OnesBitKeyImageHashMap map[int]*[]*ImageHashInfo
+
+// TODO: constraintsパッケージ使ったGenerics化を検討する
+type signed interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64
+}
+
+// abs 絶対値
+func abs[T signed](x T) T {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// bitDecode しきい値のデコード関数
+func bitDecode(x int) [4]int8 {
+	result := [4]int8{}
+	for i := range result {
+		result[i] = int8((x >> (i * 8)) & 0x000000ff)
+	}
+	return result
+}
 
 // IsEmpty 要素があるかどうか
 func (onesBitMap *OnesBitKeyImageHashMap) IsEmpty() bool {
@@ -19,9 +40,10 @@ func (onesBitMap *OnesBitKeyImageHashMap) Append(info ImageHashInfo) {
 	// NOTE: 後で比較するようにビットが立っている数によって先に割り振る
 	//       比較アルゴリズムはビットの排他的論理和の結果、0に近ければ似ていると判断する
 	//       そのため最初から立っているビット数がしきい値よりも離れていたらそもそも比較する必要がない
+	// NOTE: 特定のビット数に偏っていることがあるため64ビット単位でしきい値計算できるようにする
 	onesCount := 0
-	for _, data := range info.ImageHash.GetHash() {
-		onesCount += bits.OnesCount64(data)
+	for i, data := range info.ImageHash.GetHash() {
+		onesCount |= bits.OnesCount64(data) << (i * 8)
 	}
 
 	list, ok := (*onesBitMap)[onesCount]
@@ -51,9 +73,19 @@ func (onesBitMap *OnesBitKeyImageHashMap) GetKeyData() (*ImageHashInfo, int) {
 
 // GroupingSimilarImage 似ている画像をグルーピング
 func (onesBitMap *OnesBitKeyImageHashMap) GroupingSimilarImage(keydata *ImageHashInfo, keyDataOnesbit, threshold int) ([]string, error) {
+	// NOTE: キーデータのビット数をデコード
+	keyDataOnesbitList := bitDecode(keyDataOnesbit)
+
 	similarGroups := []string{}
 	for onesbit, list := range *onesBitMap {
-		if int(math.Abs(float64(onesbit-keyDataOnesbit))) > threshold {
+		// NOTE: 対象データと各ビット数の差を出してどれだけ異なるかを確認する
+		onesbitList := bitDecode(onesbit)
+		distance := 0
+		for i := range keyDataOnesbitList {
+			distance += int(abs(onesbitList[i] - keyDataOnesbitList[i]))
+		}
+
+		if distance > threshold {
 			// NOTE: ここと似ることはないはず
 			continue
 		}

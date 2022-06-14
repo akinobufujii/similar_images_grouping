@@ -144,8 +144,7 @@ func TestOnebitCount(t *testing.T) {
 			onesbitcount += ones
 
 			// 64bitごとにビット立ってる数を計算してシフト
-			onesbitshift <<= 8
-			onesbitshift |= ones
+			onesbitshift |= ones << (i * 8)
 
 			// hashのビット数を半分に割ってシフト
 			// 例：256bitなら128bitのビットを数えてシフト

@@ -214,12 +214,6 @@ func main() {
 	isWriteMidFile := len(cmd.WriteIntermediateFilename) != 0
 	isReadMidFile := len(cmd.ReadIntermediateFilename) != 0
 
-	rootPath := filepath.Clean(cmd.Root)
-	parallels := cmd.Parallels
-	if parallels < 1 {
-		parallels = 1
-	}
-
 	watch := stopwatch.Start()
 
 	var ch <-chan ImageHashInfo
@@ -228,6 +222,11 @@ func main() {
 		ch = streamSendImageHashFromFile(cmd.ReadIntermediateFilename)
 	} else {
 		// NOTE: 並行して見つけた画像のハッシュを計算する
+		rootPath := filepath.Clean(cmd.Root)
+		parallels := cmd.Parallels
+		if parallels < 1 {
+			parallels = 1
+		}
 		ch = streamCalcImageHash(
 			streamSendWalkFilepath(rootPath),
 			cmd.SampleWidth, cmd.SampleHeight, parallels)

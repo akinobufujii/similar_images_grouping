@@ -21,8 +21,18 @@ func abs[T signed](x T) T {
 	return x
 }
 
-// bitDecode しきい値のデコード関数
-func bitDecode(x int) [4]int8 {
+// encodeThresholdBit しきい値のエンコード関数
+func encodeThresholdBit(bitlist []uint64) int {
+	onesCount := 0
+	for i, data := range bitlist {
+		onesCount |= bits.OnesCount64(data) << (i * 8)
+	}
+
+	return onesCount
+}
+
+// decodeThresholdBit しきい値のデコード関数
+func decodeThresholdBit(x int) [4]int8 {
 	result := [4]int8{}
 	for i := range result {
 		result[i] = int8((x >> (i * 8)) & 0x000000ff)
@@ -41,10 +51,7 @@ func (onesBitMap *OnesBitKeyImageHashMap) Append(info ImageHashInfo) {
 	//       比較アルゴリズムはビットの排他的論理和の結果、0に近ければ似ていると判断する
 	//       そのため最初から立っているビット数がしきい値よりも離れていたらそもそも比較する必要がない
 	// NOTE: 特定のビット数に偏っていることがあるため64ビット単位でしきい値計算できるようにする
-	onesCount := 0
-	for i, data := range info.ImageHash.GetHash() {
-		onesCount |= bits.OnesCount64(data) << (i * 8)
-	}
+	onesCount := encodeThresholdBit(info.ImageHash.GetHash())
 
 	list, ok := (*onesBitMap)[onesCount]
 	if !ok {
@@ -74,12 +81,12 @@ func (onesBitMap *OnesBitKeyImageHashMap) GetKeyData() (*ImageHashInfo, int) {
 // GroupingSimilarImage 似ている画像をグルーピング
 func (onesBitMap *OnesBitKeyImageHashMap) GroupingSimilarImage(keydata *ImageHashInfo, keyDataOnesbit, threshold int) ([]string, error) {
 	// NOTE: キーデータのビット数をデコード
-	keyDataOnesbitList := bitDecode(keyDataOnesbit)
+	keyDataOnesbitList := decodeThresholdBit(keyDataOnesbit)
 
 	similarGroups := []string{}
 	for onesbit, list := range *onesBitMap {
 		// NOTE: 対象データと各ビット数の差を出してどれだけ異なるかを確認する
-		onesbitList := bitDecode(onesbit)
+		onesbitList := decodeThresholdBit(onesbit)
 		distance := 0
 		for i := range keyDataOnesbitList {
 			distance += int(abs(onesbitList[i] - keyDataOnesbitList[i]))
@@ -103,6 +110,7 @@ func (onesBitMap *OnesBitKeyImageHashMap) GroupingSimilarImage(keydata *ImageHas
 			if distance <= threshold {
 				// NOTE: ここに入れば似ていると判定
 				if len(similarGroups) == 0 {
+					// NOTE： もし一番最初にグルーピングするならkeydataも含める必要がある
 					similarGroups = append(similarGroups, keydata.Filepath)
 				}
 				similarGroups = append(similarGroups, info.Filepath)

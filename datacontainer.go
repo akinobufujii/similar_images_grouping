@@ -8,6 +8,11 @@ import (
 
 type OnesBitKeyImageHashMap map[int]*[]*ImageHashInfo
 
+type KeyData struct {
+	info    *ImageHashInfo
+	onesBit int
+}
+
 // TODO: constraintsパッケージ使ったGenerics化を検討する
 type signed interface {
 	~int | ~int8 | ~int16 | ~int32 | ~int64
@@ -63,7 +68,7 @@ func (onesBitMap *OnesBitKeyImageHashMap) Append(info ImageHashInfo) {
 }
 
 // GetKeyData キーデータを取得
-func (onesBitMap *OnesBitKeyImageHashMap) GetKeyData() (*ImageHashInfo, int) {
+func (onesBitMap *OnesBitKeyImageHashMap) GetKeyData() *KeyData {
 	for onesbit, list := range *onesBitMap {
 		for i, info := range *list {
 			// NOTE: 最初に見つかった要素をキーデータとする
@@ -72,16 +77,16 @@ func (onesBitMap *OnesBitKeyImageHashMap) GetKeyData() (*ImageHashInfo, int) {
 			// NOTE:  この要素は比較する必要ないので消す
 			// FIXME: 本当はgetで消さずに後でいい感じにまとめて消したい
 			(*list)[i] = nil
-			return keydata, onesbit
+			return &KeyData{info: keydata, onesBit: onesbit}
 		}
 	}
-	return nil, 0
+	return nil
 }
 
 // GroupingSimilarImage 似ている画像をグルーピング
-func (onesBitMap *OnesBitKeyImageHashMap) GroupingSimilarImage(keydata *ImageHashInfo, keyDataOnesbit, threshold int) ([]string, error) {
+func (onesBitMap *OnesBitKeyImageHashMap) GroupingSimilarImage(keydata *KeyData, threshold int) ([]string, error) {
 	// NOTE: キーデータのビット数をデコード
-	keyDataOnesbitList := decodeThresholdBit(keyDataOnesbit)
+	keyDataOnesbitList := decodeThresholdBit(keydata.onesBit)
 
 	similarGroups := []string{}
 	for onesbit, list := range *onesBitMap {
@@ -102,7 +107,7 @@ func (onesBitMap *OnesBitKeyImageHashMap) GroupingSimilarImage(keydata *ImageHas
 				continue
 			}
 
-			distance, err := keydata.ImageHash.Distance(info.ImageHash)
+			distance, err := keydata.info.ImageHash.Distance(info.ImageHash)
 			if err != nil {
 				return similarGroups, errors.Wrap(err, "failed ImageHash.Distance")
 			}
@@ -111,7 +116,7 @@ func (onesBitMap *OnesBitKeyImageHashMap) GroupingSimilarImage(keydata *ImageHas
 				// NOTE: ここに入れば似ていると判定
 				if len(similarGroups) == 0 {
 					// NOTE： もし一番最初にグルーピングするならkeydataも含める必要がある
-					similarGroups = append(similarGroups, keydata.Filepath)
+					similarGroups = append(similarGroups, keydata.info.Filepath)
 				}
 				similarGroups = append(similarGroups, info.Filepath)
 

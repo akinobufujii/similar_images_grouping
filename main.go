@@ -259,14 +259,14 @@ func main() {
 	// NOTE: 似ている画像をグルーピングする
 	similarGroupsList := [][]string{}
 	for !onesBitMap.IsEmpty() {
-		keydata, keydataOnesBit := onesBitMap.GetKeyData()
+		keydata := onesBitMap.GetKeyData()
 		if keydata == nil {
 			// NOTE: ここに来ることはないはずだが念のためフェイルセーフしておく
 			break
 		}
 
 		// NOTE: 似ている画像を獲得する
-		similarGroups, err := onesBitMap.GroupingSimilarImage(keydata, keydataOnesBit, cmd.Threshold)
+		similarGroups, err := onesBitMap.GroupingSimilarImage(keydata, cmd.Threshold)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

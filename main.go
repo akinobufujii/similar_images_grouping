@@ -234,10 +234,10 @@ func main() {
 	}
 
 	// NOTE: 要素をすべてコンテナに集約して比較する
-	onesBitMap := OnesBitKeyImageHashMap{}
+	dataContainer := OnesBitKeyImageHashMap{}
 	encodeList := ImageHashInfoList{}
 	for info := range ch {
-		onesBitMap.Append(info)
+		dataContainer.Append(info)
 		if isWriteMidFile {
 			encodeList = append(encodeList, info)
 		}
@@ -258,15 +258,15 @@ func main() {
 
 	// NOTE: 似ている画像をグルーピングする
 	similarGroupsList := [][]string{}
-	for !onesBitMap.IsEmpty() {
-		keydata := onesBitMap.GetKeyData()
+	for !dataContainer.IsEmpty() {
+		keydata := dataContainer.GetKeyData()
 		if keydata == nil {
 			// NOTE: ここに来ることはないはずだが念のためフェイルセーフしておく
 			break
 		}
 
 		// NOTE: 似ている画像を獲得する
-		similarGroups, err := onesBitMap.GroupingSimilarImage(keydata, cmd.Threshold)
+		similarGroups, err := dataContainer.GroupingSimilarImage(keydata, cmd.Threshold)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -277,13 +277,16 @@ func main() {
 			similarGroupsList = append(similarGroupsList, similarGroups)
 		}
 
-		// NOTE: onesBitMapを比較が必要なものだけに要素を切り詰める
-		onesBitMap.CompactionOnesBitMap()
+		// NOTE: dataContainerを比較が必要なものだけに要素を切り詰める
+		dataContainer.Compaction()
 	}
 
 	watch.Stop()
 	fmt.Printf("GroupingFiles: %v\n", watch.String())
 
 	// TODO: csv書き出し
-	writeJson("similar_groups.json", similarGroupsList)
+	if err := writeJson("similar_groups.json", similarGroupsList); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }

@@ -129,8 +129,8 @@ func (onesBitMap *OnesBitKeyImageHashMap) GroupingSimilarImage(keydata *KeyData,
 	return similarGroups, nil
 }
 
-// CompactionOnesBitMap 要素の切り詰めを行う
-func (onesBitMap *OnesBitKeyImageHashMap) CompactionOnesBitMap() {
+// Compaction 要素の切り詰めを行う
+func (onesBitMap *OnesBitKeyImageHashMap) Compaction() {
 	for onesbit, list := range *onesBitMap {
 		newList := []*ImageHashInfo{}
 		for _, info := range *list {

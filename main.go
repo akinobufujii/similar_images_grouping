@@ -220,6 +220,7 @@ func main() {
 	if isReadMidFile {
 		// NOTE: 中間ファイルから読み込んでその情報を受け取る
 		ch = streamSendImageHashFromFile(cmd.ReadIntermediateFilename)
+		isWriteMidFile = false
 	} else {
 		// NOTE: 並行して見つけた画像のハッシュを計算する
 		rootPath := filepath.Clean(cmd.Root)

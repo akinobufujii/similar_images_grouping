@@ -9,7 +9,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-type container interface {
+type Container interface {
 	IsEmpty() bool
 	Append(info ImageHashInfo)
 	GetKeyData() *KeyData

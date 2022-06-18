@@ -234,7 +234,7 @@ func main() {
 	}
 
 	// NOTE: 要素をすべてコンテナに集約して比較する
-	dataContainer := OnesBitKeyImageHashMap{}
+	dataContainer := &ParallelCompList{}
 	encodeList := ImageHashInfoList{}
 	for info := range ch {
 		dataContainer.Append(info)

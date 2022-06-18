@@ -2,9 +2,20 @@ package main
 
 import (
 	"math/bits"
+	"runtime"
+	"sync"
 
+	"github.com/corona10/goimagehash"
 	"github.com/pkg/errors"
 )
+
+type DataContainer interface {
+	IsEmpty() bool
+	Append(info ImageHashInfo)
+	GetKeyData() *KeyData
+	GroupingSimilarImage(keydata *KeyData, threshold int) ([]string, error)
+	Compaction()
+}
 
 type OnesBitKeyImageHashMap map[int]*[]*ImageHashInfo
 
@@ -145,4 +156,109 @@ func (onesBitMap *OnesBitKeyImageHashMap) Compaction() {
 			(*onesBitMap)[onesbit] = &newList
 		}
 	}
+}
+
+type ParallelCompList []*ImageHashInfo
+
+func (dataContainer *ParallelCompList) IsEmpty() bool {
+	return len(*dataContainer) == 0
+}
+
+func (dataContainer *ParallelCompList) Append(info ImageHashInfo) {
+	*dataContainer = append(*dataContainer, &info)
+}
+
+func (dataContainer *ParallelCompList) GetKeyData() *KeyData {
+	keydata := &ImageHashInfo{}
+	for i, data := range *dataContainer {
+		if data != nil {
+			keydata = data
+			(*dataContainer)[i] = nil
+			break
+		}
+	}
+
+	if keydata != nil {
+		return &KeyData{info: keydata}
+	}
+
+	return nil
+}
+
+func compKeydata(ch chan<- string, view ParallelCompList, imageHash *goimagehash.ExtImageHash, threshold int) error {
+	for i, data := range view {
+		if data == nil {
+			continue
+		}
+
+		distance, err := data.ImageHash.Distance(imageHash)
+		if err != nil {
+			return errors.Wrap(err, "failed ImageHash.Distance")
+		}
+
+		if distance <= threshold {
+			// NOTE: 似てるという判定
+			// NOTE: ここで同時にdataContainerに書き込みアクセスするが
+			//       別々の内容に同時に書き込むだけなので大丈夫なはず
+			ch <- data.Filepath
+			view[i] = nil
+		}
+	}
+	return nil
+}
+
+func (dataContainer *ParallelCompList) GroupingSimilarImage(keydata *KeyData, threshold int) ([]string, error) {
+	// NOTE: 論理スレッド数分goroutineを生成し
+	//       その中でkeydataの内容と近いかどうかを総当たりで全比較する
+	similarGroups := []string{}
+	parallels := runtime.NumCPU()
+	containerSize := len(*dataContainer)
+	if parallels > containerSize {
+		parallels = containerSize
+	}
+	dataViewOffset := containerSize / parallels
+
+	ch := make(chan string, parallels)
+	wg := sync.WaitGroup{}
+	wg.Add(parallels)
+	for i := 0; i < parallels; i++ {
+		viewBegin := i * dataViewOffset
+		viewEnd := (i + 1) * dataViewOffset
+		if viewEnd > containerSize {
+			viewEnd = containerSize
+		}
+
+		go func(view ParallelCompList, imageHash *goimagehash.ExtImageHash, threshold int) {
+			compKeydata(ch, view, imageHash, threshold)
+			wg.Done()
+		}((*dataContainer)[viewBegin:viewEnd], keydata.info.ImageHash, threshold)
+	}
+
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	for filepath := range ch {
+		// NOTE: ここでは似ているものだけ受け取るので
+		//       一つでも受信したらkeydataとグルーピングできる
+		similarGroups = append(similarGroups, filepath)
+	}
+
+	if len(similarGroups) > 0 {
+		similarGroups = append(similarGroups, keydata.info.Filepath)
+	}
+
+	return similarGroups, nil
+}
+
+func (dataContainer *ParallelCompList) Compaction() {
+	newList := make(ParallelCompList, 0, len(*dataContainer))
+	for _, info := range *dataContainer {
+		if info != nil {
+			newList = append(newList, info)
+		}
+	}
+
+	*dataContainer = newList
 }

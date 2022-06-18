@@ -214,30 +214,30 @@ func main() {
 	isWriteMidFile := len(cmd.WriteIntermediateFilename) != 0
 	isReadMidFile := len(cmd.ReadIntermediateFilename) != 0
 
-	rootPath := filepath.Clean(cmd.Root)
-	parallels := cmd.Parallels
-	if parallels < 1 {
-		parallels = 1
-	}
-
 	watch := stopwatch.Start()
 
 	var ch <-chan ImageHashInfo
 	if isReadMidFile {
 		// NOTE: 中間ファイルから読み込んでその情報を受け取る
 		ch = streamSendImageHashFromFile(cmd.ReadIntermediateFilename)
+		isWriteMidFile = false
 	} else {
 		// NOTE: 並行して見つけた画像のハッシュを計算する
+		rootPath := filepath.Clean(cmd.Root)
+		parallels := cmd.Parallels
+		if parallels < 1 {
+			parallels = 1
+		}
 		ch = streamCalcImageHash(
 			streamSendWalkFilepath(rootPath),
 			cmd.SampleWidth, cmd.SampleHeight, parallels)
 	}
 
 	// NOTE: 要素をすべてコンテナに集約して比較する
-	onesBitMap := OnesBitKeyImageHashMap{}
+	container := &ParallelCompList{}
 	encodeList := ImageHashInfoList{}
 	for info := range ch {
-		onesBitMap.Append(info)
+		container.Append(info)
 		if isWriteMidFile {
 			encodeList = append(encodeList, info)
 		}
@@ -258,15 +258,15 @@ func main() {
 
 	// NOTE: 似ている画像をグルーピングする
 	similarGroupsList := [][]string{}
-	for !onesBitMap.IsEmpty() {
-		keydata, keydataOnesBit := onesBitMap.GetKeyData()
+	for !container.IsEmpty() {
+		keydata := container.GetKeyData()
 		if keydata == nil {
 			// NOTE: ここに来ることはないはずだが念のためフェイルセーフしておく
 			break
 		}
 
 		// NOTE: 似ている画像を獲得する
-		similarGroups, err := onesBitMap.GroupingSimilarImage(keydata, keydataOnesBit, cmd.Threshold)
+		similarGroups, err := container.GroupingSimilarImage(keydata, cmd.Threshold)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -277,13 +277,16 @@ func main() {
 			similarGroupsList = append(similarGroupsList, similarGroups)
 		}
 
-		// NOTE: onesBitMapを比較が必要なものだけに要素を切り詰める
-		onesBitMap.CompactionOnesBitMap()
+		// NOTE: containerを比較が必要なものだけに要素を切り詰める
+		container.Compaction()
 	}
 
 	watch.Stop()
 	fmt.Printf("GroupingFiles: %v\n", watch.String())
 
 	// TODO: csv書き出し
-	writeJson("similar_groups.json", similarGroupsList)
+	if err := writeJson("similar_groups.json", similarGroupsList); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/bits"
 	"os"
 	"reflect"
@@ -127,9 +128,9 @@ func TestOnebitCount(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	onesBitCountSumMap := map[uint32]int32{}
-	onesBitCountShiftMap := map[uint32]int32{}
-	onesBitCountShiftSumMap := map[uint32]int32{}
+	onesBitCountSumMap := map[string]int32{}
+	onesBitCountShiftMap := map[string]int32{}
+	onesBitCountShiftSumMap := map[string]int32{}
 	t.Logf("listnum: %v\n", len(encodeList))
 	for _, encodeData := range encodeList {
 		onesbitcount := uint32(0)
@@ -143,8 +144,7 @@ func TestOnebitCount(t *testing.T) {
 			onesbitcount += ones
 
 			// 64bitごとにビット立ってる数を計算してシフト
-			onesbitshift <<= 8
-			onesbitshift |= ones
+			onesbitshift |= ones << (i * 8)
 
 			// hashのビット数を半分に割ってシフト
 			// 例：256bitなら128bitのビットを数えてシフト
@@ -153,9 +153,15 @@ func TestOnebitCount(t *testing.T) {
 			}
 			onesbitshiftsum += ones
 		}
-		onesBitCountSumMap[onesbitcount]++
-		onesBitCountShiftMap[onesbitshift]++
-		onesBitCountShiftSumMap[onesbitshiftsum]++
+		onesBitCountSumMap[fmt.Sprintf("%v", onesbitcount)]++
+		onesBitCountShiftMap[fmt.Sprintf("%v + %v + %v + %v",
+			(onesbitshift>>24)&0x000000ff,
+			(onesbitshift>>16)&0x000000ff,
+			(onesbitshift>>8)&0x000000ff,
+			(onesbitshift)&0x000000ff)]++
+		onesBitCountShiftSumMap[fmt.Sprintf("%v + %v",
+			(onesbitshiftsum>>16)&0x0000ffff,
+			(onesbitshiftsum)&0x0000ffff)]++
 	}
 
 	if err := writeJson("onesbitsum.json", onesBitCountSumMap); err != nil {

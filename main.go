@@ -234,10 +234,10 @@ func main() {
 	}
 
 	// NOTE: 要素をすべてコンテナに集約して比較する
-	dataContainer := &ParallelCompList{}
+	container := &ParallelCompList{}
 	encodeList := ImageHashInfoList{}
 	for info := range ch {
-		dataContainer.Append(info)
+		container.Append(info)
 		if isWriteMidFile {
 			encodeList = append(encodeList, info)
 		}
@@ -258,15 +258,15 @@ func main() {
 
 	// NOTE: 似ている画像をグルーピングする
 	similarGroupsList := [][]string{}
-	for !dataContainer.IsEmpty() {
-		keydata := dataContainer.GetKeyData()
+	for !container.IsEmpty() {
+		keydata := container.GetKeyData()
 		if keydata == nil {
 			// NOTE: ここに来ることはないはずだが念のためフェイルセーフしておく
 			break
 		}
 
 		// NOTE: 似ている画像を獲得する
-		similarGroups, err := dataContainer.GroupingSimilarImage(keydata, cmd.Threshold)
+		similarGroups, err := container.GroupingSimilarImage(keydata, cmd.Threshold)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -277,8 +277,8 @@ func main() {
 			similarGroupsList = append(similarGroupsList, similarGroups)
 		}
 
-		// NOTE: dataContainerを比較が必要なものだけに要素を切り詰める
-		dataContainer.Compaction()
+		// NOTE: containerを比較が必要なものだけに要素を切り詰める
+		container.Compaction()
 	}
 
 	watch.Stop()

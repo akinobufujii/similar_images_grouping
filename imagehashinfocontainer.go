@@ -9,7 +9,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-type DataContainer interface {
+type container interface {
 	IsEmpty() bool
 	Append(info ImageHashInfo)
 	GetKeyData() *KeyData
@@ -160,20 +160,20 @@ func (onesBitMap *OnesBitKeyImageHashMap) Compaction() {
 
 type ParallelCompList []*ImageHashInfo
 
-func (dataContainer *ParallelCompList) IsEmpty() bool {
-	return len(*dataContainer) == 0
+func (container *ParallelCompList) IsEmpty() bool {
+	return len(*container) == 0
 }
 
-func (dataContainer *ParallelCompList) Append(info ImageHashInfo) {
-	*dataContainer = append(*dataContainer, &info)
+func (container *ParallelCompList) Append(info ImageHashInfo) {
+	*container = append(*container, &info)
 }
 
-func (dataContainer *ParallelCompList) GetKeyData() *KeyData {
+func (container *ParallelCompList) GetKeyData() *KeyData {
 	keydata := &ImageHashInfo{}
-	for i, data := range *dataContainer {
+	for i, data := range *container {
 		if data != nil {
 			keydata = data
-			(*dataContainer)[i] = nil
+			(*container)[i] = nil
 			break
 		}
 	}
@@ -198,7 +198,7 @@ func compKeydata(ch chan<- string, view ParallelCompList, imageHash *goimagehash
 
 		if distance <= threshold {
 			// NOTE: 似てるという判定
-			// NOTE: ここで同時にdataContainerに書き込みアクセスするが
+			// NOTE: ここで同時にcontainerに書き込みアクセスするが
 			//       別々の内容に同時に書き込むだけなので大丈夫なはず
 			ch <- data.Filepath
 			view[i] = nil
@@ -207,12 +207,12 @@ func compKeydata(ch chan<- string, view ParallelCompList, imageHash *goimagehash
 	return nil
 }
 
-func (dataContainer *ParallelCompList) GroupingSimilarImage(keydata *KeyData, threshold int) ([]string, error) {
+func (container *ParallelCompList) GroupingSimilarImage(keydata *KeyData, threshold int) ([]string, error) {
 	// NOTE: 論理スレッド数分goroutineを生成し
 	//       その中でkeydataの内容と近いかどうかを総当たりで全比較する
 	similarGroups := []string{}
 	parallels := runtime.NumCPU()
-	containerSize := len(*dataContainer)
+	containerSize := len(*container)
 	if parallels > containerSize {
 		parallels = containerSize
 	}
@@ -231,7 +231,7 @@ func (dataContainer *ParallelCompList) GroupingSimilarImage(keydata *KeyData, th
 		go func(view ParallelCompList, imageHash *goimagehash.ExtImageHash, threshold int) {
 			compKeydata(ch, view, imageHash, threshold)
 			wg.Done()
-		}((*dataContainer)[viewBegin:viewEnd], keydata.info.ImageHash, threshold)
+		}((*container)[viewBegin:viewEnd], keydata.info.ImageHash, threshold)
 	}
 
 	go func() {
@@ -252,13 +252,13 @@ func (dataContainer *ParallelCompList) GroupingSimilarImage(keydata *KeyData, th
 	return similarGroups, nil
 }
 
-func (dataContainer *ParallelCompList) Compaction() {
-	newList := make(ParallelCompList, 0, len(*dataContainer))
-	for _, info := range *dataContainer {
+func (container *ParallelCompList) Compaction() {
+	newList := make(ParallelCompList, 0, len(*container))
+	for _, info := range *container {
 		if info != nil {
 			newList = append(newList, info)
 		}
 	}
 
-	*dataContainer = newList
+	*container = newList
 }

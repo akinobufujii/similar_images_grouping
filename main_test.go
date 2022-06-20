@@ -174,3 +174,24 @@ func TestOnebitCount(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func BenchmarkImageHash(b *testing.B) {
+	path := "samples/Cerberus_Front_Pres_01.jpg"
+	imageData, _, err := readimageutil.ReadImage(path)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// NOTE: pHashを計算
+	imagehash, err := goimagehash.ExtPerceptionHash(imageData, 16, 16)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	b.StartTimer()
+	for n := 0; n < b.N; n++ {
+		imagehash.Distance(imagehash)
+	}
+	b.StopTimer()
+}

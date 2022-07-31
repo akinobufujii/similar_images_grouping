@@ -21,8 +21,8 @@ func (container *ParallelCompList) IsEmpty() bool {
 	return len(*container) == 0
 }
 
-func (container *ParallelCompList) Append(info ImageHashInfo) {
-	*container = append(*container, &info)
+func (container *ParallelCompList) Append(info *ImageHashInfo) {
+	*container = append(*container, info)
 }
 
 func (container *ParallelCompList) GetKeyData() *KeyData {

@@ -5,7 +5,6 @@ go 1.18
 require (
 	github.com/bradhe/stopwatch v0.0.0-20190618212248-a58cccc508ea
 	github.com/corona10/goimagehash v1.0.3
-	github.com/pkg/errors v0.9.1
 	golang.org/x/text v0.3.7
 )
 

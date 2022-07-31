@@ -18,7 +18,6 @@ import (
 	"github.com/akinobufujii/similar_images_grouping/readimageutil"
 	"github.com/bradhe/stopwatch"
 	"github.com/corona10/goimagehash"
-	"github.com/pkg/errors"
 )
 
 // streamSendWalkFilepath 指定ディレクトリ以下のwalk結果を返していくストリーム
@@ -27,7 +26,7 @@ func streamSendWalkFilepath(root string) <-chan string {
 	go func() {
 		walkFunc := func(path string, d os.DirEntry, err error) error {
 			if err != nil {
-				return errors.Wrap(err, "failed filepath.WalkDir func")
+				return fmt.Errorf("failed filepath.WalkDir func: %w", err)
 			}
 
 			if d.IsDir() {
@@ -143,18 +142,18 @@ func streamCalcImageHash(inputStream <-chan string, samplew, sampleh, parallels 
 func writeJson(path string, targetData any) error {
 	data, err := json.Marshal(targetData)
 	if err != nil {
-		return errors.Wrap(err, "failed json.Marshal")
+		return fmt.Errorf("failed json.Marshal: %s %w", path, err)
 	}
 
 	buf := bytes.Buffer{}
 	err = json.Indent(&buf, data, "", "  ")
 	if err != nil {
-		return errors.Wrap(err, "failed json.Indent")
+		return fmt.Errorf("failed json.Indent: %w", err)
 	}
 
 	file, err := os.Create(path)
 	if err != nil {
-		return errors.Wrap(err, "failed os.Create: "+path)
+		return fmt.Errorf("failed os.Create: %s %w", path, err)
 	}
 
 	file.Write(buf.Bytes())

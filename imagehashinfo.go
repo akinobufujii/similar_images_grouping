@@ -5,9 +5,9 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 
 	"github.com/corona10/goimagehash"
-	"github.com/pkg/errors"
 )
 
 type ImageHashInfo struct {
@@ -22,11 +22,11 @@ func (p *ImageHashInfo) MarshalJSON() ([]byte, error) {
 	b := bytes.Buffer{}
 	writer := bufio.NewWriter(&b)
 	if err := p.ImageHash.Dump(writer); err != nil {
-		return []byte{}, errors.Wrap(err, "failed ImageHash.Dump")
+		return []byte{}, fmt.Errorf("failed ImageHash.Dump: %w", err)
 	}
 
 	if err := writer.Flush(); err != nil {
-		return []byte{}, errors.Wrap(err, "failed Flush")
+		return []byte{}, fmt.Errorf("failed Flush: %w", err)
 	}
 
 	encodeData := struct {
@@ -39,7 +39,7 @@ func (p *ImageHashInfo) MarshalJSON() ([]byte, error) {
 
 	data, err := json.Marshal(encodeData)
 	if err != nil {
-		return []byte{}, errors.Wrap(err, "failed Marshal")
+		return []byte{}, fmt.Errorf("failed Marshal: %w", err)
 	}
 
 	return data, nil
@@ -54,18 +54,18 @@ func (p *ImageHashInfo) UnmarshalJSON(b []byte) error {
 
 	err := json.Unmarshal(b, &decodeData)
 	if err != nil {
-		return errors.Wrap(err, "failed Unmarshal")
+		return fmt.Errorf("failed Unmarshal: %w", err)
 	}
 
 	data, err := base64.StdEncoding.DecodeString(decodeData.ImageHashDump)
 	if err != nil {
-		return errors.Wrap(err, "failed DecodeString")
+		return fmt.Errorf("failed DecodeString: %w", err)
 	}
 
 	reader := bufio.NewReader(bytes.NewBuffer(data))
 	p.ImageHash, err = goimagehash.LoadExtImageHash(reader)
 	if err != nil {
-		return errors.Wrap(err, "failed LoadExtImageHash")
+		return fmt.Errorf("failed LoadExtImageHash: %w", err)
 	}
 	p.Filepath = decodeData.Filepath
 

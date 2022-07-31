@@ -162,35 +162,6 @@ func writeJson(path string, targetData any) error {
 	return nil
 }
 
-// streamSendImageHashFromFile 中間ファイルからImageHashInfoを送り続けるストリーム
-func streamSendImageHashFromFile(filename string) <-chan ImageHashInfo {
-	ch := make(chan ImageHashInfo, 1)
-
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		// TODO: error handring
-		close(ch)
-		return ch
-	}
-
-	// TODO: streaming read
-	imageHashInfoList := ImageHashInfoList{}
-	if err := json.Unmarshal(data, &imageHashInfoList); err != nil {
-		// TODO: error handring
-		close(ch)
-		return ch
-	}
-
-	go func() {
-		for _, info := range imageHashInfoList {
-			ch <- info
-		}
-		close(ch)
-	}()
-
-	return ch
-}
-
 func main() {
 	cmd := struct {
 		Root                      string
@@ -216,38 +187,38 @@ func main() {
 
 	watch := stopwatch.Start()
 
-	var ch <-chan ImageHashInfo
+	// NOTE: 要素をすべてコンテナに集約して比較する
+	container := &ParallelCompList{}
 	if isReadMidFile {
-		// NOTE: 中間ファイルから読み込んでその情報を受け取る
-		ch = streamSendImageHashFromFile(cmd.ReadIntermediateFilename)
-		isWriteMidFile = false
+		// NOTE: 中間ファイルがあるならそれをデシリアライズする
+		err := container.Deserialize(cmd.ReadIntermediateFilename)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	} else {
 		// NOTE: 並行して見つけた画像のハッシュを計算する
+		var ch <-chan ImageHashInfo
 		rootPath := filepath.Clean(cmd.Root)
 		parallels := cmd.Parallels
 		if parallels < 1 {
 			parallels = 1
 		}
+
 		ch = streamCalcImageHash(
 			streamSendWalkFilepath(rootPath),
 			cmd.SampleWidth, cmd.SampleHeight, parallels)
-	}
-
-	// NOTE: 要素をすべてコンテナに集約して比較する
-	container := &ParallelCompList{}
-	encodeList := ImageHashInfoList{}
-	for info := range ch {
-		container.Append(info)
-		if isWriteMidFile {
-			encodeList = append(encodeList, info)
+		for info := range ch {
+			container.Append(info)
 		}
-	}
 
-	if isWriteMidFile && len(encodeList) > 0 {
-		// NOTE: 復帰できるようにJsonファイルを保存する
-		if err := writeJson(cmd.WriteIntermediateFilename, encodeList); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+		if isWriteMidFile && !container.IsEmpty() {
+			// NOTE: 復帰できるようにSerializeしてファイル保存する
+			err := container.Serialize(cmd.WriteIntermediateFilename)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
 		}
 	}
 

@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"os"
 	"runtime"
 	"sync"
 
 	"github.com/corona10/goimagehash"
-	"github.com/pkg/errors"
 )
 
 type KeyData struct {
@@ -47,7 +50,7 @@ func compKeydata(ch chan<- string, view ParallelCompList, imageHash *goimagehash
 
 		distance, err := data.ImageHash.Distance(imageHash)
 		if err != nil {
-			return errors.Wrap(err, "failed ImageHash.Distance")
+			return fmt.Errorf("failed ImageHash.Distance")
 		}
 
 		if distance <= threshold {
@@ -115,4 +118,42 @@ func (container *ParallelCompList) Compaction() {
 	}
 
 	*container = newList
+}
+
+func (container *ParallelCompList) Serialize(path string) error {
+	data, err := json.Marshal(*container)
+	if err != nil {
+		return fmt.Errorf("failed json.Marshal: %w", err)
+	}
+
+	buf := bytes.Buffer{}
+	err = json.Indent(&buf, data, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed json.Indent: %w", err)
+	}
+
+	file, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("failed os.Create: %s %w", path, err)
+	}
+
+	_, err = file.Write(buf.Bytes())
+	if err != nil {
+		return fmt.Errorf("failed file.Write: %s %w", path, err)
+	}
+
+	return nil
+}
+
+func (container *ParallelCompList) Deserialize(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed os.ReadFile: %s %w", path, err)
+	}
+
+	if err := json.Unmarshal(data, container); err != nil {
+		return fmt.Errorf("failed json.Unmarshal: %s %w", path, err)
+	}
+
+	return nil
 }

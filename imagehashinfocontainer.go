@@ -20,13 +20,13 @@ func (container *ParallelCompList) Append(info *ImageHashInfo) {
 	*container = append(*container, info)
 }
 
-func compKeydata(ch chan<- string, view ParallelCompList, imageHash *goimagehash.ExtImageHash, threshold int) error {
+func compSrcImagehash(ch chan<- string, view ParallelCompList, srcImageHash *goimagehash.ExtImageHash, threshold int) error {
 	for i, data := range view {
 		if data == nil {
 			continue
 		}
 
-		distance, err := data.ImageHash.Distance(imageHash)
+		distance, err := srcImageHash.Distance(data.ImageHash)
 		if err != nil {
 			return fmt.Errorf("failed ImageHash.Distance: %w", err)
 		}
@@ -44,7 +44,7 @@ func compKeydata(ch chan<- string, view ParallelCompList, imageHash *goimagehash
 
 func (container *ParallelCompList) GroupingSimilarImage(threshold int) ([]string, error) {
 	// NOTE: 論理スレッド数分goroutineを生成し
-	//       その中でkeydataの内容と近いかどうかを総当たりで全比較する
+	//       その中で比較元の内容と近いかどうかを総当たりで全比較する
 	containerSize := len(*container)
 	if containerSize <= 1 {
 		// NOTE: 比較するものがないので空にして抜ける
@@ -75,7 +75,7 @@ func (container *ParallelCompList) GroupingSimilarImage(threshold int) ([]string
 		}
 
 		eg.Go(func() error {
-			return compKeydata(ch, (*container)[viewBegin:viewEnd], src.ImageHash, threshold)
+			return compSrcImagehash(ch, (*container)[viewBegin:viewEnd], src.ImageHash, threshold)
 		})
 	}
 
@@ -87,7 +87,7 @@ func (container *ParallelCompList) GroupingSimilarImage(threshold int) ([]string
 	similarGroups := []string{}
 	for filepath := range ch {
 		// NOTE: ここでは似ているものだけ受け取るので
-		//       一つでも受信したらkeydataとグルーピングできる
+		//       一つでも受信したら比較元とグルーピングできる
 		similarGroups = append(similarGroups, filepath)
 	}
 

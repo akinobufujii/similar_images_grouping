@@ -1,19 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
-	"sync"
 
 	"github.com/corona10/goimagehash"
+	"golang.org/x/sync/errgroup"
 )
-
-type KeyData struct {
-	info *ImageHashInfo
-}
 
 type ParallelCompList []*ImageHashInfo
 
@@ -25,23 +20,6 @@ func (container *ParallelCompList) Append(info *ImageHashInfo) {
 	*container = append(*container, info)
 }
 
-func (container *ParallelCompList) GetKeyData() *KeyData {
-	keydata := &ImageHashInfo{}
-	for i, data := range *container {
-		if data != nil {
-			keydata = data
-			(*container)[i] = nil
-			break
-		}
-	}
-
-	if keydata != nil {
-		return &KeyData{info: keydata}
-	}
-
-	return nil
-}
-
 func compKeydata(ch chan<- string, view ParallelCompList, imageHash *goimagehash.ExtImageHash, threshold int) error {
 	for i, data := range view {
 		if data == nil {
@@ -50,7 +28,7 @@ func compKeydata(ch chan<- string, view ParallelCompList, imageHash *goimagehash
 
 		distance, err := data.ImageHash.Distance(imageHash)
 		if err != nil {
-			return fmt.Errorf("failed ImageHash.Distance")
+			return fmt.Errorf("failed ImageHash.Distance: %w", err)
 		}
 
 		if distance <= threshold {
@@ -64,20 +42,31 @@ func compKeydata(ch chan<- string, view ParallelCompList, imageHash *goimagehash
 	return nil
 }
 
-func (container *ParallelCompList) GroupingSimilarImage(keydata *KeyData, threshold int) ([]string, error) {
+func (container *ParallelCompList) GroupingSimilarImage(threshold int) ([]string, error) {
 	// NOTE: 論理スレッド数分goroutineを生成し
 	//       その中でkeydataの内容と近いかどうかを総当たりで全比較する
-	similarGroups := []string{}
-	parallels := runtime.NumCPU()
 	containerSize := len(*container)
+	if containerSize <= 1 {
+		// NOTE: 比較するものがないので空にして抜ける
+		*container = make(ParallelCompList, 0)
+		return nil, nil
+	}
+
+	// NOTE: 最初の要素を比較元にする
+	src := (*container)[0]
+
+	// NOTE: 残りの要素と比較するのでずらす
+	(*container) = (*container)[1:]
+	containerSize -= 1
+
+	parallels := runtime.NumCPU()
 	if parallels > containerSize {
 		parallels = containerSize
 	}
 	dataViewOffset := containerSize / parallels
 
 	ch := make(chan string, parallels)
-	wg := sync.WaitGroup{}
-	wg.Add(parallels)
+	eg := errgroup.Group{}
 	for i := 0; i < parallels; i++ {
 		viewBegin := i * dataViewOffset
 		viewEnd := (i + 1) * dataViewOffset
@@ -85,17 +74,17 @@ func (container *ParallelCompList) GroupingSimilarImage(keydata *KeyData, thresh
 			viewEnd = containerSize
 		}
 
-		go func(view ParallelCompList, imageHash *goimagehash.ExtImageHash, threshold int) {
-			compKeydata(ch, view, imageHash, threshold)
-			wg.Done()
-		}((*container)[viewBegin:viewEnd], keydata.info.ImageHash, threshold)
+		eg.Go(func() error {
+			return compKeydata(ch, (*container)[viewBegin:viewEnd], src.ImageHash, threshold)
+		})
 	}
 
 	go func() {
-		wg.Wait()
+		eg.Wait()
 		close(ch)
 	}()
 
+	similarGroups := []string{}
 	for filepath := range ch {
 		// NOTE: ここでは似ているものだけ受け取るので
 		//       一つでも受信したらkeydataとグルーピングできる
@@ -103,10 +92,10 @@ func (container *ParallelCompList) GroupingSimilarImage(keydata *KeyData, thresh
 	}
 
 	if len(similarGroups) > 0 {
-		similarGroups = append(similarGroups, keydata.info.Filepath)
+		similarGroups = append(similarGroups, src.Filepath)
 	}
 
-	return similarGroups, nil
+	return similarGroups, eg.Wait()
 }
 
 func (container *ParallelCompList) Compaction() {
@@ -121,38 +110,32 @@ func (container *ParallelCompList) Compaction() {
 }
 
 func (container *ParallelCompList) Serialize(path string) error {
-	data, err := json.Marshal(*container)
-	if err != nil {
-		return fmt.Errorf("failed json.Marshal: %w", err)
-	}
-
-	buf := bytes.Buffer{}
-	err = json.Indent(&buf, data, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed json.Indent: %w", err)
-	}
-
 	file, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("failed os.Create: %s %w", path, err)
 	}
+	defer file.Close()
 
-	_, err = file.Write(buf.Bytes())
-	if err != nil {
-		return fmt.Errorf("failed file.Write: %s %w", path, err)
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+
+	if err := encoder.Encode(container); err != nil {
+		return fmt.Errorf("failed json.Encode: %w", err)
 	}
 
 	return nil
 }
 
 func (container *ParallelCompList) Deserialize(path string) error {
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("failed os.ReadFile: %s %w", path, err)
+		return fmt.Errorf("failed os.Open: %s %w", path, err)
 	}
+	defer file.Close()
 
-	if err := json.Unmarshal(data, container); err != nil {
-		return fmt.Errorf("failed json.Unmarshal: %s %w", path, err)
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(container); err != nil {
+		return fmt.Errorf("failed json.Decode: %s %w", path, err)
 	}
 
 	return nil

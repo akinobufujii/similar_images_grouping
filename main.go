@@ -237,14 +237,8 @@ func main() {
 	// NOTE: 似ている画像をグルーピングする
 	similarGroupsList := [][]string{}
 	for !container.IsEmpty() {
-		keydata := container.GetKeyData()
-		if keydata == nil {
-			// NOTE: ここに来ることはないはずだが念のためフェイルセーフしておく
-			break
-		}
-
 		// NOTE: 似ている画像を獲得する
-		similarGroups, err := container.GroupingSimilarImage(keydata, cmd.Threshold)
+		similarGroups, err := container.GroupingSimilarImage(cmd.Threshold)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

@@ -22,11 +22,11 @@ func (p *ImageHashInfo) MarshalJSON() ([]byte, error) {
 	b := bytes.Buffer{}
 	writer := bufio.NewWriter(&b)
 	if err := p.ImageHash.Dump(writer); err != nil {
-		return []byte{}, fmt.Errorf("failed ImageHash.Dump: %w", err)
+		return nil, fmt.Errorf("failed ImageHash.Dump: %w", err)
 	}
 
 	if err := writer.Flush(); err != nil {
-		return []byte{}, fmt.Errorf("failed Flush: %w", err)
+		return nil, fmt.Errorf("failed Flush: %w", err)
 	}
 
 	encodeData := struct {
@@ -39,7 +39,7 @@ func (p *ImageHashInfo) MarshalJSON() ([]byte, error) {
 
 	data, err := json.Marshal(encodeData)
 	if err != nil {
-		return []byte{}, fmt.Errorf("failed Marshal: %w", err)
+		return nil, fmt.Errorf("failed Marshal: %w", err)
 	}
 
 	return data, nil

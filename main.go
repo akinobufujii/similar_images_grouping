@@ -2,7 +2,6 @@ package main
 
 import (
 	"archive/zip"
-	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -22,24 +21,18 @@ import (
 
 // writeJson json書き込み
 func writeJson(path string, targetData any) error {
-	data, err := json.Marshal(targetData)
-	if err != nil {
-		return fmt.Errorf("failed json.Marshal: %s %w", path, err)
-	}
-
-	buf := bytes.Buffer{}
-	err = json.Indent(&buf, data, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed json.Indent: %w", err)
-	}
-
 	file, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("failed os.Create: %s %w", path, err)
 	}
 	defer file.Close()
 
-	file.Write(buf.Bytes())
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+
+	if err := encoder.Encode(&targetData); err != nil {
+		return fmt.Errorf("failed json.Encode: %w", err)
+	}
 
 	return nil
 }

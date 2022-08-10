@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -75,9 +76,8 @@ func readImageFromZip(path string, chCalcImagehash chan<- *ImageHashInfo, sample
 	}
 
 	for _, file := range zipReader.File {
-		imageData, err := getImageData(file)
-		if err != nil {
-			return fmt.Errorf("failed getImageData: %w", err)
+		if file.FileInfo().IsDir() {
+			continue
 		}
 
 		dispname := file.Name
@@ -89,7 +89,15 @@ func readImageFromZip(path string, chCalcImagehash chan<- *ImageHashInfo, sample
 			}
 		}
 
-		imageHash, err := calcImageHash(imageData, filepath.Join(path, dispname), samplew, sampleh)
+		imageData, err := getImageData(file)
+		fullFilename := filepath.Join(path, dispname)
+		if err != nil {
+			// NOTE: 画像として開けなければスルーして完走するようにする
+			fmt.Fprintf(os.Stderr, "%v: %s\n", err, fullFilename)
+			continue
+		}
+
+		imageHash, err := calcImageHash(imageData, fullFilename, samplew, sampleh)
 		if err != nil {
 			return fmt.Errorf("failed calcImageHash: %s %w", path, err)
 		}
@@ -100,11 +108,11 @@ func readImageFromZip(path string, chCalcImagehash chan<- *ImageHashInfo, sample
 }
 
 // createParallelCompList ParallelCompListを作成する
-func createParallelCompList(container *ParallelCompList, root string, samplew, sampleh, parallels int) error {
-	eg := errgroup.Group{}
+func createParallelCompList(ctx context.Context, container *ParallelCompList, root string, samplew, sampleh, parallels int) error {
+	eg, ctx := errgroup.WithContext(ctx)
 
 	// NOTE: ファイルのパスを送り続けるgoroutine
-	chPath := make(chan string, 1)
+	chPath := make(chan string, parallels)
 	eg.Go(func() error {
 		defer close(chPath)
 		return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -116,7 +124,12 @@ func createParallelCompList(container *ParallelCompList, root string, samplew, s
 				return nil
 			}
 
-			chPath <- path
+			select {
+			case chPath <- path:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+
 			return nil
 		})
 	})
@@ -144,8 +157,14 @@ func createParallelCompList(container *ParallelCompList, root string, samplew, s
 					if err != nil {
 						return fmt.Errorf("failed calcImageHash: %s %w", path, err)
 					}
-					chCalcImagehash <- imageHash
+
+					select {
+					case chCalcImagehash <- imageHash:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
 				}
+
 			}
 			return nil
 		})
@@ -206,7 +225,7 @@ func main() {
 		if parallels < 1 {
 			parallels = 1
 		}
-		err := createParallelCompList(container, rootPath, cmd.SampleWidth, cmd.SampleHeight, parallels)
+		err := createParallelCompList(context.Background(), container, rootPath, cmd.SampleWidth, cmd.SampleHeight, parallels)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

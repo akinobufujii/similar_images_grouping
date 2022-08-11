@@ -95,10 +95,12 @@ func (container *ParallelCompList) GroupingSimilarImage(threshold int) ([]string
 		similarGroups = append(similarGroups, src.Filepath)
 	}
 
+	container.compaction()
+
 	return similarGroups, eg.Wait()
 }
 
-func (container *ParallelCompList) Compaction() {
+func (container *ParallelCompList) compaction() {
 	newList := make(ParallelCompList, 0, len(*container))
 	for _, info := range *container {
 		if info != nil {

@@ -144,12 +144,15 @@ func createParallelCompList(ctx context.Context, container *ParallelCompList, ro
 				case ".zip": // NOTE: zipファイル
 					err := readImageFromZip(path, chCalcImagehash, samplew, sampleh)
 					if err != nil {
-						return fmt.Errorf("failed readImageFromZip: %s %w", path, err)
+						// NOTE: 読めなくてもログだけ出して継続
+						fmt.Fprintln(os.Stderr, fmt.Errorf("failed readImageFromZip: %s %w", path, err))
+						continue
 					}
 				default: // NOTE: その他（画像ファイルとして判断）
 					imageData, _, err := readimageutil.ReadImage(path)
 					if err != nil {
-						// NOTE: 読めなかったものはスルー
+						// NOTE: 読めなくてもログだけ出して継続
+						fmt.Fprintln(os.Stderr, fmt.Errorf("failed readimageutil.ReadImage: %s %w", path, err))
 						continue
 					}
 
@@ -260,9 +263,6 @@ func main() {
 			// NOTE: 一つ以上要素が入っていれば何かしら似ていると判定
 			similarGroupsList = append(similarGroupsList, similarGroups)
 		}
-
-		// NOTE: containerを比較が必要なものだけに要素を切り詰める
-		container.Compaction()
 	}
 
 	watch.Stop()

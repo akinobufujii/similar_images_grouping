@@ -64,15 +64,25 @@ func (container *ParallelCompList) GroupingSimilarImage(threshold int) ([]string
 		parallels = containerSize
 	}
 	dataViewOffset := containerSize / parallels
+	remainder := containerSize % parallels
 
 	ch := make(chan string, parallels)
 	eg := errgroup.Group{}
+	nextViewBegin := 0
 	for i := 0; i < parallels; i++ {
-		viewBegin := i * dataViewOffset
-		viewEnd := (i + 1) * dataViewOffset
-		if viewEnd > containerSize {
+		viewBegin := nextViewBegin
+		viewEnd := nextViewBegin + dataViewOffset
+		if remainder != 0 && i < remainder {
+			// NOTE: 余剰が出る場合は比較数に偏りが出る可能性がある
+			//       goroutine起動index < (containerSize % parallels)なら1要素追加する
+			viewEnd += 1
+		}
+
+		if viewEnd > containerSize || i == parallels-1 {
 			viewEnd = containerSize
 		}
+
+		nextViewBegin = viewEnd
 
 		eg.Go(func() error {
 			return compSrcImagehash(ch, (*container)[viewBegin:viewEnd], src.ImageHash, threshold)

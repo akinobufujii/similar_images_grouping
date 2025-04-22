@@ -1,6 +1,8 @@
 module github.com/akinobufujii/similar_images_grouping
 
-go 1.20
+go 1.24
+
+toolchain go1.24.2
 
 require (
 	github.com/bradhe/stopwatch v0.0.0-20190618212248-a58cccc508ea
